@@ -1,0 +1,25 @@
+# UBFC-rPPG dataset configuration. Referenced by scripts/prepare_ubfc.py
+# and by both pretrain.yaml / finetune.yaml's `data.root` (via the
+# MASKFUSIONNET_UBFC_ROOT environment variable -- never hard-code a local
+# path in a committed config).
+
+dataset:
+  name: UBFC-rPPG
+  root: ${MASKFUSIONNET_UBFC_ROOT}
+  video_filename: vid.avi
+  ground_truth_filename: ground_truth.txt
+  nominal_fps: 30.0
+
+preprocessing:
+  face_detector: haar_cascade   # (ours) documented substitution for the
+                                 # paper's FAN detector -- see
+                                 # src/maskfusionnet/data/preprocessing.py
+  image_size: 128
+  normalization: minmax_0_1     # (ours) no ImageNet mean/std; trained from scratch
+
+split:
+  strategy: subject_level
+  train_frac: 0.7
+  val_frac: 0.15
+  test_frac: 0.15
+  seed: 42

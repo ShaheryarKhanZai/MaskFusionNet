@@ -1,0 +1,37 @@
+# Stage 2: rPPG fine-tuning config.
+
+model:
+  embed_dim: 96
+  num_heads: 4
+  branch_layers: 8    # (paper) L(Psi_enc) = L(Theta_enc) = 8, Section III-B-4
+  fusion_layers: 4     # (paper) L(Gamma_enc) = 4
+  mfb_fuse_at: 4        # (paper) MFB combines the 4th-layer outputs, Section IV
+
+pretrained_encoder:
+  checkpoint: checkpoints/pretrain/best.pt   # set to null to fine-tune from scratch
+  strict_shapes: true
+
+data:
+  root: ${MASKFUSIONNET_UBFC_ROOT}
+  clip_length: 160
+  stride: 80            # (ours) 50% overlap for more fine-tuning clips than pretraining uses
+  image_size: 128
+  fps: 30.0
+  train_frac: 0.7
+  val_frac: 0.15
+  split_seed: 42        # keep identical to pretrain.yaml's seed -> identical subject split
+
+training:
+  epochs: 100            # (ours) UBFC-rPPG is far smaller than VIPL-HR; paper doesn't fine-tune on UBFC
+  batch_size: 4           # (paper) Section IV-B
+  optimizer: adam
+  learning_rate: 1.0e-4   # (paper) VIPL-HR/COHFACE LR, Section IV-B (PURE used 3.5e-3)
+  weight_decay: 5.0e-5    # (paper)
+  use_amp: false
+  grad_accum_steps: 1
+  checkpoint_every: 5
+  num_workers: 4
+
+output:
+  checkpoint_dir: checkpoints/finetune
+  log_dir: logs/finetune

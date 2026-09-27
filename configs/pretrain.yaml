@@ -1,0 +1,43 @@
+# Stage 1: masked pretraining config.
+# Values marked "(paper)" come directly from Section III-A-2/IV-B of the
+# paper; values marked "(ours)" are choices made for the UBFC-rPPG
+# reproduction where the paper is silent or used different datasets.
+
+model:
+  embed_dim: 96          # (paper) C = 96, Section III-B-1
+  num_heads: 4            # (paper) M_e = 4, Section III-B-4
+  mask_ratio: 0.75        # (paper) rho = 0.75, Section III-B-3 / ablation Table V
+  encoder_layers: 12      # (paper) L(Phi_enc) = 12, Section III-B-4
+  decoder_layers: 6       # (paper) L_d = 6, Section III-B-6
+  decoder_heads: 4        # (paper) M_d = 4, Section III-B-6
+  tube_size: [4, 4, 4]    # (paper) Phi_emb tube size, Section III-A-2-b
+
+loss:
+  alpha: 1.0   # (paper) L_space weight, Table VII best setting
+  beta: 1.0    # (paper) L_time weight
+  gamma: 1.0   # (paper) L_pre weight in L_stage1, Eq. 20
+
+data:
+  root: ${MASKFUSIONNET_UBFC_ROOT}   # set this env var, or override on the CLI
+  clip_length: 160        # (paper) training clip length, Section IV-B
+  stride: 160              # (ours) non-overlapping clips by default
+  image_size: 128          # (paper) face resize target, Section IV-B
+  fps: 30.0                # (ours) UBFC-rPPG nominal recording rate
+  train_frac: 0.7          # (ours) subject-level split
+  val_frac: 0.15
+  split_seed: 42
+
+training:
+  epochs: 400              # (paper) pre-training epoch count, Section IV-B
+  batch_size: 8            # (paper) Section IV-B
+  optimizer: adam
+  learning_rate: 2.0e-6    # (paper) Section IV-B
+  weight_decay: 5.0e-5     # (paper) Section IV-B
+  use_amp: false
+  grad_accum_steps: 1
+  checkpoint_every: 10
+  num_workers: 4
+
+output:
+  checkpoint_dir: checkpoints/pretrain
+  log_dir: logs/pretrain

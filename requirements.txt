@@ -1,0 +1,8 @@
+torch>=2.2
+numpy>=1.26
+scipy>=1.11
+opencv-python>=4.9   # needed for scripts/realtime_demo.py's cv2.imshow; use opencv-python-headless instead if you only run training/evaluation on a server with no display
+matplotlib>=3.8
+PyYAML>=6.0
+pytest>=7.4
+tqdm>=4.66

@@ -1,0 +1,23 @@
+
+=== Stage 1: MaskFusionNetPretrain ===
+Input:                 (1, 3, 160, 128, 128)
+After ConvBlock:       (1, 96, 160, 16, 16)
+After Embedding (tube):(1, 96, 40, 4, 4)
+After TubeMasking:     (1, 96, 40, 4, 4)  (mask ratio=0.750)
+After Encoder (12 lyr):(1, 96, 40, 4, 4)
+Predictor output:      (1, 160)
+Decoder output x_dec:  (1, 96, 40, 4, 4)  (== x_tube shape: True)
+
+=== Stage 2: MaskFusionNet (fine-tuning) ===
+Input:                 (1, 3, 160, 128, 128)
+ADB tokens (tube 2,4,4): (1, 96, 80, 4, 4)
+SEB tokens (tube 4,4,4): (1, 96, 40, 4, 4)
+ADB after 4 layers:    (1, 96, 80, 4, 4)
+SEB after 4 layers:    (1, 96, 40, 4, 4)
+ADB temporally aligned to SEB: (1, 96, 40, 4, 4)
+After MFB #1 (-> new SEB stream): (1, 96, 40, 4, 4)
+ADB after 8 layers:    (1, 96, 80, 4, 4)
+SEB after 8 layers:    (1, 96, 40, 4, 4)
+After MFB #2 (final fusion): (1, 96, 40, 4, 4)
+After Fusion Encoder (4 lyr): (1, 96, 40, 4, 4)
+Predictor output (rPPG): (1, 160)
