@@ -70,43 +70,9 @@ aspirational.
 
 ## 3. Architecture
 
-```mermaid
-flowchart TD
-    subgraph Stage1["Stage 1 — Masked Pretraining"]
-        A1[Input clip 3xTxHxW] --> A2[ConvBlock Phi_conv]
-        A2 --> A3[Tube Embedding Phi_emb]
-        A3 --> A4[Tube Masking rho=0.75]
-        A4 --> A5[Encoder Phi_enc x12]
-        A5 --> A6[Decoder Phi_dec x6]
-        A6 --> A7[Reconstruction Loss]
-        A5 --> A8[Predictor]
-        A8 --> A9[Prediction Loss]
-    end
-
-    subgraph Stage2["Stage 2 — Dual-Stream Fine-Tuning"]
-        B1[Input clip 3xTxHxW] --> B2A[ADB ConvBlock+Embed tube 2,4,4]
-        B1 --> B2B[SEB ConvBlock+Embed tube 4,4,4]
-        B2A --> B3A[ADB Encoder layers 1-4]
-        B2B --> B3B[SEB Encoder layers 1-4]
-        B3A --> B4[Temporal Align AvgPool]
-        B4 --> B5[MFB #1]
-        B3B --> B5
-        B5 --> B6B[SEB Encoder layers 5-8]
-        B3A --> B6A[ADB Encoder layers 5-8]
-        B6A --> B7[Temporal Align AvgPool]
-        B7 --> B8[MFB #2]
-        B6B --> B8
-        B8 --> B9[Fusion Encoder Gamma_enc x4]
-        B9 --> B10[Predictor]
-        B10 --> B11[Predicted rPPG signal]
-        B11 --> B12[Bandpass Filter]
-        B12 --> B13[FFT]
-        B13 --> B14[Heart Rate BPM]
-    end
-
-    A5 -. first 8 layers .-> B6B
-    A5 -. last 4 layers .-> B9
-```
+<p align="center">
+  <img src="data/artitecture.png" alt="MaskFusionNet Architecture">
+</p>
 
 ## 4. Why ADB and SEB?
 
