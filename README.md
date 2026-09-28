@@ -71,7 +71,7 @@ aspirational.
 ## 3. Architecture
 
 <p align="center">
-  <img src="data/artitecture.png" alt="MaskFusionNet Architecture">
+  <img src="data/architecture.PNG" alt="MaskFusionNet Architecture">
 </p>
 
 ## 4. Why ADB and SEB?
