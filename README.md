@@ -219,7 +219,7 @@ These figures use a synthetic sinusoid and a synthetic clip. They verify the mas
 
 **Tube masking** (identical spatial mask at every frame, the property illustrated in the paper's Fig. 3):
 
-![Tube masking](results/figures/tube_masking.png)
+![Tube masking](data/masking.PNG)
 
 **Signal processing** (78 bpm synthetic sinusoid; the FFT stage recovers 78.0 bpm):
 
