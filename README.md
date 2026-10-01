@@ -1,360 +1,277 @@
 # MaskFusionNet
 
-**Masked Pretraining + Dual-Stream Transformer Architecture for Contactless Heart Rate Estimation from Facial Video**
+**Masked pretraining + dual-stream transformer for contactless heart-rate estimation from facial video (rPPG): an audited, tested, from-scratch PyTorch reimplementation.**
 
-[![Tests](https://img.shields.io/badge/tests-34%20passing-brightgreen)]()
+[![CI](https://github.com/ShaheryarKhanZai/MaskFusionNet/actions/workflows/ci.yml/badge.svg)](https://github.com/ShaheryarKhanZai/MaskFusionNet/actions)
+[![Tests](https://img.shields.io/badge/tests-34%20passing-brightgreen)](tests/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2%2B-red)]()
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)]()
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-> **Read this first:** this repository is a from-scratch, paper-faithful
-> reconstruction of MaskFusionNet's architecture, built by auditing a
-> previous, buggy implementation line-by-line against the paper. Every
-> architectural claim below is backed by a passing test in `tests/`, a
-> real (CPU) forward/backward pass, or an explicit citation to the paper's
-> equations — see [`AUDIT.md`](AUDIT.md) for the full bug list this fixes.
-> **No model has been trained on real data in this repository** (no GPU or
-> dataset was available while building it) — see
-> [Results](#results) for exactly what has, and hasn't, been run.
+Paper: Y. Zhang, J. Shi, J. Wang, Y. Zong, W. Zheng, G. Zhao, *"MaskFusionNet: A Dual-Stream Fusion Model With Masked Pre-Training Mechanism for rPPG Measurement,"* IEEE TCSVT, vol. 34, no. 11, pp. 11521–11534, 2024. [DOI: 10.1109/TCSVT.2024.3422849](https://doi.org/10.1109/TCSVT.2024.3422849)
+
+This repo started as an audit of an earlier implementation that had real architectural bugs (a per-position gate instead of attention, aliased branch weights, no genuine masked-pretraining stage). [`AUDIT.md`](AUDIT.md) documents every bug and the fix, and each architectural claim below is backed by a unit test.
 
 ---
 
-## 1. Overview
+## 1. At a glance
 
-Remote photoplethysmography (rPPG) estimates cardiovascular pulse
-information — heart rate, and the waveform it comes from — from ordinary
-RGB video, by detecting the faint, periodic color changes in skin caused
-by blood volume changes, with no physical sensor contact.
+| | |
+|---|---|
+| Task | Heart-rate / BVP-waveform estimation from RGB face video |
+| Model | 3D-conv stem, tube tokens, ViT-style encoders, interactive-attention fusion (MFB) |
+| Training | Stage 1: masked reconstruction + prediction loss. Stage 2: dual-stream fine-tuning |
+| Dataset used here | UBFC-rPPG, subject-independent 70/15/15 split |
+| Tests | 34 unit tests, no dataset or GPU needed |
+| Result | Masked pretraining lowers MAE from 4.80 to 4.51 bpm and raises Pearson r from 0.73 to 0.79 (single run) |
 
-This project implements the architecture from:
+## 2. Results
 
-> Y. Zhang, J. Shi, J. Wang, Y. Zong, W. Zheng, G. Zhao, **"MaskFusionNet:
-> A Dual-Stream Fusion Model With Masked Pre-Training Mechanism for rPPG
-> Measurement,"** *IEEE Transactions on Circuits and Systems for Video
-> Technology*, vol. 34, no. 11, pp. 11521–11534, Nov. 2024.
-> [DOI: 10.1109/TCSVT.2024.3422849](https://doi.org/10.1109/TCSVT.2024.3422849)
+All numbers below are produced by `scripts/evaluate.py` on the held-out, subject-independent test split and written to `results/tables/eval_results.json`.
 
-The paper proposes a two-stage model: **(1)** a masked-video pretraining
-stage that forces the network to extract pulse information from *any*
-facial region, not just the easy, high-signal regions, and **(2)** a
-dual-stream fine-tuning stage that fuses fine-grained ("adjacent frame")
-and coarse-grained ("segmented") temporal features via a learned
-interactive-attention fusion block, to estimate the pulse waveform.
+**This repo, UBFC-rPPG test split**
 
-## 2. Key Features
+| Model | MAE (bpm) ↓ | RMSE (bpm) ↓ | SD (bpm) ↓ | Pearson r ↑ |
+|---|---|---|---|---|
+| MaskFusionNet (pretrain + fine-tune) | **4.51** | **7.09** | **7.01** | **0.79** |
+| MaskFusionNet w/o pretraining (`--no_pretrain`) | 4.80 | 7.81 | 7.78 | 0.73 |
 
-- Faithful **3D convolutional stem + tube-token embedding** (Eq. 1-2)
-- **Real multi-head self-attention** over the flattened spatio-temporal
-  token sequence (Eq. 4-7) — not a per-position gate (see [`AUDIT.md`](AUDIT.md), bug #1)
-- **Tube random masking** — one spatial mask per sample, replicated
-  identically across every frame (Eq. 3, Fig. 3) — with a unit test that
-  checks this programmatically, not just visually
-- **Independent** Adjacent Branch (ADB) and Segmented Branch (SEB)
-  encoders, with no accidental weight sharing (see [`AUDIT.md`](AUDIT.md), bug #2)
-- **Multi-Scale Fusion Block (MFB)** with the paper's exact Q/K/V
-  assignment and residual connection (Eq. 8-10)
-- A working **two-stage pipeline**: masked pretraining → paper-exact
-  weight loading into fine-tuning (Section III-A-2-a) → fine-tuning
-- **Reconstruction loss** (spatial + temporal-smoothness, Eq. 15-17) and
-  **prediction loss** (negative Pearson + frequency-domain CE/KL, Eq.
-  18-19), both implemented and unit-tested
-- Subject-independent **UBFC-rPPG** data pipeline (face-crop, split,
-  BVP alignment)
-- **FFT-based heart-rate estimation** from the predicted waveform, with a
-  real-time webcam demo
-- Config-driven training (YAML), checkpointing with full
-  missing/unexpected-key reporting, Docker support, 34 passing unit tests
+Run details: a single run (no seed repeats), NVIDIA T4 (16 GB) on Google Colab, 200 pretraining epochs and 200 fine-tuning epochs, batch size 2 in both stages, evaluated on the held-out subjects of the subject-level 70/15/15 split.
 
-Only what's listed above actually exists in this repo — nothing here is
-aspirational.
+**Reference: the paper's reported numbers (different datasets, not comparable)**
 
-## 3. Architecture
+Taken from Tables I–III of the paper. They are listed so you can see the scale of the original claims, not as a target this repo's UBFC numbers should be read against.
+
+| Paper setting | Variant | MAE | RMSE | SD | r |
+|---|---|---|---|---|---|
+| VIPL-HR, 5-fold (Table I) | pretrained | 4.37 | 6.95 | 6.84 | 0.82 |
+| VIPL-HR, 5-fold (Table I) | w/o pretraining | 4.67 | 7.61 | 7.57 | 0.77 |
+| COHFACE (Table II) | pretrained | 1.27 | 2.22 | n/a | 0.98 |
+| COHFACE (Table II) | w/o pretraining | 1.29 | 2.30 | n/a | 0.98 |
+| PURE (Table III) | pretrained | 1.11 | 1.39 | n/a | 0.99 |
+| PURE (Table III) | w/o pretraining | 1.09 | 1.41 | n/a | 0.99 |
+
+> **Read this before comparing.** The paper evaluates on VIPL-HR, COHFACE and PURE. It reports nothing on UBFC-rPPG. UBFC-rPPG is a small, well-lit, near-frontal dataset, so errors on it are not interchangeable with errors on VIPL-HR (which has heavy motion and lighting variation). The evaluation protocol also differs (see [Section 7](#7-dataset)). A like-for-like check against the paper requires one of the paper's own datasets (PURE is the most accessible; see [Roadmap](#13-limitations-and-roadmap)).
+
+### How this compares with the paper
+
+**Overall accuracy.** On the UBFC-rPPG test split the full model reaches MAE 4.51 bpm, RMSE 7.09 bpm, SD 7.01 bpm and r 0.79. For scale, the paper's VIPL-HR 5-fold result (Table I) is MAE 4.37, RMSE 6.95, SD 6.84 and r 0.82, so this run is 0.14 bpm higher in MAE and RMSE, 0.17 bpm higher in SD and 0.03 lower in r, with the caveat above that the evaluation setup differs from the paper's.
+
+**Does pretraining help?** The paper's central claim is that masked pretraining improves on training the dual-stream network alone. Table I reports MAE 4.67 → 4.37 bpm and r 0.77 → 0.82 on VIPL-HR (5-fold), and Tables VIII and IX report MAE 5.69 → 4.85 bpm and r 0.77 → 0.86 on fold 2. The same comparison in this repo gives MAE 4.80 → 4.51 bpm, RMSE 7.81 → 7.09 bpm, SD 7.78 → 7.01 bpm and r 0.73 → 0.79, so the direction of the benefit is reproduced, and its size (about 0.3 bpm MAE, about 0.05 to 0.06 r) is close to the paper's 5-fold gap. This is a single run, and a 0.29 bpm MAE difference is small enough that seed-to-seed variation could account for part of it; repeated seeds are on the [roadmap](#13-limitations-and-roadmap).
+
+**Likely sources of any gap.** Different dataset (UBFC-rPPG instead of VIPL-HR/COHFACE/PURE), Haar-cascade instead of FAN face detection, a subject-level split on a small dataset, 200 pretraining epochs against the paper's 400, batch size 2 against the paper's 8 (pretraining) and 4 (fine-tuning), and a single seed.
+
+### What is verified independent of training
+
+All reproducible with the commands shown:
+
+- **Forward/backward correctness** for both stages at paper-scale input size, with no NaNs and gradients reaching every parameter.
+- **34/34 unit tests** (`pytest tests/ -v`): tube-mask consistency, attention actually mixing tokens, MFB's residual connection, the paper-exact 8/4/0 pretrain-to-fine-tune weight split, and BPM recovery from synthetic sinusoids across 45–160 bpm within 3 bpm.
+- **The training loop** (optimizer step, checkpointing, CSV logging, resume) works end to end, on a small synthetic dataset in the tests and on UBFC-rPPG for the results above.
+
+## 3. Overview
+
+Remote photoplethysmography (rPPG) estimates pulse information from the faint, periodic skin-colour changes caused by blood-volume changes, using ordinary RGB video and no contact sensor.
+
+The paper proposes a two-stage model:
+
+1. **Masked pretraining.** Tube masking hides the same spatial regions in every frame, so the encoder must recover pulse information from whichever facial regions stay visible rather than relying only on the easiest high-SNR areas (forehead, cheek centres).
+2. **Dual-stream fine-tuning.** A fine-grained *Adjacent Branch* (ADB) and a coarse *Segmented Branch* (SEB) are fused by a *Multi-Scale Fusion Block* (MFB) using cross-branch interactive attention.
+
+## 4. Key features
+
+- 3D-conv stem and tube-token embedding (paper Eq. 1–2)
+- Real multi-head self-attention over the spatio-temporal token sequence (Eq. 4–7), not a per-position gate ([`AUDIT.md`](AUDIT.md), bug #1)
+- Tube random masking with a unit test that checks the mask is identical across frames (Eq. 3, Fig. 3)
+- Independent ADB and SEB encoders with no accidental weight sharing ([`AUDIT.md`](AUDIT.md), bug #2)
+- MFB with the paper's Q/K/V assignment (SEB queries, ADB keys/values) and residual connection (Eq. 8–10)
+- Two-stage pipeline with the paper's pretrain-to-fine-tune weight mapping (first 8 encoder layers into SEB, last 4 into the fusion encoder, ADB from scratch)
+- Reconstruction loss (spatial MSE + temporal-smoothness L1, Eq. 15–17) and prediction loss (negative Pearson + frequency-domain CE/KL over 140 HR classes, Eq. 18–19), both unit-tested
+- Subject-independent UBFC-rPPG pipeline, FFT-based HR estimation, real-time webcam demo
+- YAML-config training, checkpointing that reports missing/unexpected keys, Docker, 34 tests
+
+## 5. Architecture
 
 <p align="center">
-  <img src="data/architecture.PNG" alt="MaskFusionNet Architecture">
+  <img src="data/architecture.PNG" alt="MaskFusionNet architecture">
 </p>
 
-## 4. Why ADB and SEB?
+<sub>Architecture diagram based on Fig. 2 of Zhang et al. (2024).</sub>
 
-- **ADB (Adjacent Branch)** uses a fine temporal tube (2 frames per
-  token), so it captures **subtle heart-rate variation between adjacent
-  frames** — the paper's phrasing.
-- **SEB (Segmented Branch)** uses a coarser temporal tube (4 frames per
-  token), so it captures **longer-range, more stable patterns**, which
-  "helps to alleviate the impact of sudden interference" (Section
-  III-A-2-b).
-- **MFB** fuses them with cross-branch (interactive) attention: SEB
-  provides the query, ADB provides the key/value, so the coarse stream
-  selectively pulls in fine-grained detail from the adjacent-frame stream
-  without losing its own noise robustness (Eq. 8-10).
+**Why two branches?** ADB uses a fine temporal tube (2 frames per token) to catch subtle frame-to-frame variation. SEB uses a coarser tube (4 frames per token) for stable, interference-resistant long-range patterns. MFB lets the coarse stream pull fine detail from the fast stream (Eq. 8–10).
 
-## 5. Masked Pretraining
+**Masked pretraining flow**
 
 ```
 Video clip
     │
-    ▼
-ConvBlock + Tube Embedding   (tokens: [B, C=96, T/4, H/32, W/32])
+ConvBlock + Tube Embedding      [B, 96, T/4, H/32, W/32]
     │
-    ▼
-Tube Masking (ρ=0.75, spatial mask replicated across all T)
+Tube masking (ρ = 0.75, one spatial mask replicated over all T)
     │
-    ▼
-Encoder (12 transformer layers)
+Encoder (12 transformer layers) ──▶ Predictor ──▶ prediction loss
     │
-    ├──▶ Predictor ──▶ prediction loss (disentangles pulse info from noise)
+Decoder (6 lightweight layers)
     │
-    ▼
-Decoder (6 lightweight transformer layers)
-    │
-    ▼
-Reconstruction (compared against the pre-masking tokens, masked positions only)
+Reconstruction loss vs. pre-masking tokens, masked positions only
 ```
 
-Why: forcing the encoder to reconstruct heart-rate-bearing tokens **it
-never saw** — from *whichever* facial regions happened to stay visible —
-prevents it from learning to rely only on the easiest, highest-SNR
-patches (forehead/cheek centers), which is exactly what makes rPPG models
-fragile to occlusion, motion, and lighting changes (Section III-A-1).
+**Fine-tuning weight transfer.** SEB gets the first 8 pretrained encoder layers and the fusion encoder gets the last 4. ADB trains from scratch because its tube size gives a different token layout. This is implemented in [`MaskFusionNet.load_pretrained_encoder()`](src/maskfusionnet/models/maskfusionnet.py) and verified by `tests/test_shapes.py::test_pretrained_encoder_loading_report`.
 
-## 6. Fine-tuning
-
-The fine-tuning model's SEB and Fusion Encoder are initialized from the
-pretrained encoder's weights — the first 8 of its 12 layers go into SEB,
-the last 4 into the Fusion Encoder. ADB is **not** initialized this way
-(its tube size differs, so its token/channel layout doesn't match) and
-trains from scratch. This mapping is implemented in
-[`MaskFusionNet.load_pretrained_encoder()`](src/maskfusionnet/models/maskfusionnet.py)
-and verified in `tests/test_shapes.py::test_pretrained_encoder_loading_report`.
-
-## 7. Tensor Dimensions
-
-Actual output of `python scripts/inspect_shapes.py --T 160 --H 128 --W 128`
-(paper-scale defaults), run in this environment and saved verbatim to
-[`results/tables/shape_trace.txt`](results/tables/shape_trace.txt):
+**Tensor shapes** (from `python scripts/inspect_shapes.py --T 160 --H 128 --W 128`, saved to [`results/tables/shape_trace.txt`](results/tables/shape_trace.txt)):
 
 | Stage | Tensor | Shape `[B, C, T, H, W]` |
 |---|---|---|
 | Input | raw clip | `(1, 3, 160, 128, 128)` |
-| Stage 1 | after ConvBlock | `(1, 96, 160, 16, 16)` |
-| Stage 1 | tube tokens (Φ_emb, tube 4,4,4) | `(1, 96, 40, 4, 4)` |
-| Stage 1 | after masking (ρ=0.75, shape unchanged) | `(1, 96, 40, 4, 4)` |
-| Stage 1 | after 12-layer encoder | `(1, 96, 40, 4, 4)` |
-| Stage 1 | decoder output (== tube shape) | `(1, 96, 40, 4, 4)` |
-| Stage 1 | predictor output | `(1, 160)` |
-| Stage 2 | ADB tokens (Ψ_emb, tube 2,4,4) | `(1, 96, 80, 4, 4)` |
-| Stage 2 | SEB tokens (Θ_emb, tube 4,4,4) | `(1, 96, 40, 4, 4)` |
-| Stage 2 | ADB aligned to SEB (AvgPool ÷2) | `(1, 96, 40, 4, 4)` |
-| Stage 2 | after MFB #1 / MFB #2 | `(1, 96, 40, 4, 4)` |
-| Stage 2 | after 4-layer Fusion Encoder | `(1, 96, 40, 4, 4)` |
-| Stage 2 | predicted rPPG signal | `(1, 160)` |
+| 1 | after ConvBlock | `(1, 96, 160, 16, 16)` |
+| 1 | tube tokens (tube 4,4,4) | `(1, 96, 40, 4, 4)` |
+| 1 | decoder output | `(1, 96, 40, 4, 4)` |
+| 1 | predictor output | `(1, 160)` |
+| 2 | ADB tokens (tube 2,4,4) | `(1, 96, 80, 4, 4)` |
+| 2 | SEB tokens (tube 4,4,4) | `(1, 96, 40, 4, 4)` |
+| 2 | ADB aligned to SEB (AvgPool ÷2) | `(1, 96, 40, 4, 4)` |
+| 2 | after MFB #1 / MFB #2 / fusion encoder | `(1, 96, 40, 4, 4)` |
+| 2 | predicted rPPG signal | `(1, 160)` |
 
-## 8. Dataset
-
-**This reproduction uses [UBFC-rPPG](https://sites.google.com/view/ybenezeth/ubfcrppg),
-not VIPL-HR / COHFACE / PURE — the three datasets the paper itself
-evaluates on.** This is a deliberate scope decision (UBFC is small,
-public, and easy to obtain), not a claim of exact reproduction. Concretely:
-
-| | Paper's setup | This repo's setup |
-|---|---|---|
-| Datasets | VIPL-HR, COHFACE, PURE | UBFC-rPPG |
-| Face detector | FAN | Haar cascade (OpenCV, no extra model download) |
-| Split | paper's own protocol (e.g. 5-fold on VIPL-HR) | subject-level 70/15/15 |
-| Reported numbers | Tables I–IV of the paper | **none yet — see [Results](#13-results)** |
-
-**Do not read any number in this repository as reproducing the paper's
-Table I–IV results.** Different dataset, different preprocessing,
-different split. See [`data/README.md`](data/README.md) for the full
-UBFC-rPPG layout and ground-truth format this code expects.
-
-## 9. Dataset Preparation
+## 6. Quickstart
 
 ```bash
-export MASKFUSIONNET_UBFC_ROOT=/absolute/path/to/UBFC-rPPG
-python scripts/prepare_ubfc.py
-```
-
-This only discovers subjects and prints the subject-level train/val/test
-split that training will use — it does not copy or re-encode any video
-(UBFC's raw layout is read directly by `UBFCrPPGDataset`).
-
-## 10. Installation
-
-```bash
-git clone <this-repo>
+git clone https://github.com/ShaheryarKhanZai/MaskFusionNet.git
 cd MaskFusionNet
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-pytest tests/ -v          # 34 tests, should all pass, no dataset needed
+pip install -r requirements.txt && pip install -e .
+pytest tests/ -v          # 34 tests, no dataset needed
 ```
 
-Or with Docker:
+Docker smoke test:
 
 ```bash
 docker build -t maskfusionnet .
-docker run maskfusionnet   # runs scripts/inspect_shapes.py as a smoke test
+docker run maskfusionnet   # runs scripts/inspect_shapes.py
 ```
 
-## 11. Training
+Inference on your own video with a checkpoint you trained (see [Section 8](#8-training-and-evaluation)); run `python scripts/inference.py --help` for the available options. Passing `--ground_truth` produces a predicted-vs-ground-truth BVP plot.
 
-```bash
-# Stage 1: masked pretraining
-python scripts/train_pretrain.py --config configs/pretrain.yaml
-
-# Stage 2: fine-tuning (loads Stage 1's checkpoint per configs/finetune.yaml)
-python scripts/train_finetune.py --config configs/finetune.yaml
-
-# Fine-tune from scratch instead (ablation: no pretraining)
-python scripts/train_finetune.py --config configs/finetune.yaml --no_pretrain
-```
-
-Both scripts support `--resume <checkpoint.pt>`, read `data.root` from
-`configs/*.yaml` (which itself reads the `MASKFUSIONNET_UBFC_ROOT`
-environment variable — no path is hard-coded anywhere), and write
-per-epoch checkpoints + a CSV metrics log.
-
-## 12. Evaluation
-
-```bash
-python scripts/evaluate.py --config configs/finetune.yaml \
-    --checkpoint checkpoints/finetune/best.pt
-```
-
-Computes MAE / RMSE / Pearson r on per-clip HR estimates and mean SNR on
-the filtered waveform, over the held-out **subject-independent** test
-split, and writes `results/tables/eval_results.json`.
-
-## 13. Results
-
-**Not yet run.** No GPU and no copy of UBFC-rPPG were available while
-building this repository, so no training has taken place and no accuracy
-numbers exist anywhere in this repo. The table below is the format
-`scripts/evaluate.py` will populate — it is intentionally empty rather
-than filled with placeholder numbers:
-
-| Model | MAE (bpm) | RMSE (bpm) | Pearson r | SNR (dB) |
-|---|---|---|---|---|
-| MaskFusionNet (this repo, UBFC-rPPG) | *pending* | *pending* | *pending* | *pending* |
-
-What **has** been verified (all reproducible by running the commands
-shown):
-
-- **Forward/backward correctness**, both stages, at paper-scale input
-  size, no NaNs, gradients reach every parameter.
-- **34/34 unit tests pass** (`pytest tests/ -v`): tube-mask consistency,
-  attention actually mixing tokens, MFB's residual connection, the
-  paper-exact 8/4/0 pretrain→finetune weight-loading split, and BPM
-  recovery from synthetic sinusoids across 45–160 bpm within 3 bpm.
-- **The training loop itself** (optimizer step, checkpointing, CSV
-  logging, resume) works end-to-end against a tiny synthetic dataset
-  standing in for UBFC-rPPG.
-
-See [`AUDIT.md`](AUDIT.md) for the exhaustive list of what this fixes in
-the previous implementation, and exactly what was and wasn't run.
-
-## 14. Qualitative Results
-
-Since no trained checkpoint exists yet, the figures below demonstrate the
-**signal-processing pipeline** (filter → FFT → BPM) on a synthetic
-sinusoid of *known* frequency, and the **masking mechanism** on a
-synthetic demo clip — both clearly not model predictions, and both
-regenerable by the commands shown.
-
-**Tube masking** (identical spatial mask at every frame — the property
-the paper's Fig. 3 illustrates):
-
-![Tube masking](results/figures/tube_masking.png)
-
-**Signal-processing verification** (78 bpm synthetic sinusoid → FFT
-correctly recovers 78.0 bpm):
-
-![Spectrum verification](results/figures/signal_processing_verification_spectrum.png)
-
-Once a real checkpoint exists, `scripts/inference.py --ground_truth ...`
-produces the equivalent predicted-vs-ground-truth BVP plot from real data.
-
-## 15. Real-Time Demo
+Real-time webcam demo:
 
 ```bash
 python scripts/realtime_demo.py --checkpoint checkpoints/finetune/best.pt
 ```
 
-Pipeline: `Webcam → Face detection → Rolling buffer → MaskFusionNet →
-rPPG → Bandpass → FFT → BPM`. The displayed BPM is always either the
-freshly computed estimate or a documented moving-average over the last N
-estimates — see [`AUDIT.md`](AUDIT.md), bug #8, for what this replaced
-(the original demo injected literal random jitter into the displayed
-number).
+Pipeline: webcam → face detection → rolling buffer → MaskFusionNet → rPPG → bandpass → FFT → BPM. The displayed BPM is either the fresh estimate or a documented moving average. The original demo injected random jitter into the number ([`AUDIT.md`](AUDIT.md), bug #8).
 
-## 16. Project Structure
+## 7. Dataset
+
+This reproduction trains and evaluates on **[UBFC-rPPG](https://sites.google.com/view/ybenezeth/ubfcrppg)**. This is a deliberate scope decision, not a claim of exact reproduction.
+
+| | Paper | This repo |
+|---|---|---|
+| Datasets | VIPL-HR, COHFACE, PURE | UBFC-rPPG |
+| Face detector | FAN | Haar cascade (OpenCV) |
+| Split | 5-fold on VIPL-HR, dataset-specific otherwise | subject-level 70/15/15 |
+| Clip length / size | 160 frames, 128×128, 30 fps | same |
+| Test protocol | 30 s videos cut into three 10 s segments, HR averaged | HR estimated from each 160-frame clip's predicted waveform (bandpass + FFT) and compared with ground truth per clip |
+
+Data layout and ground-truth format: [`data/README.md`](data/README.md).
+
+```bash
+export MASKFUSIONNET_UBFC_ROOT=/absolute/path/to/UBFC-rPPG
+python scripts/prepare_ubfc.py     # lists subjects and prints the train/val/test split
+```
+
+## 8. Training and evaluation
+
+```bash
+# Stage 1: masked pretraining
+python scripts/train_pretrain.py --config configs/pretrain.yaml
+
+# Stage 2: fine-tuning (loads the Stage 1 checkpoint per configs/finetune.yaml)
+python scripts/train_finetune.py --config configs/finetune.yaml
+
+# Ablation: fine-tune from scratch, no pretraining
+python scripts/train_finetune.py --config configs/finetune.yaml --no_pretrain
+
+# Evaluate on the held-out subject-independent test split
+python scripts/evaluate.py --config configs/finetune.yaml \
+    --checkpoint checkpoints/finetune/best.pt
+```
+
+Both training scripts support `--resume`, read the dataset root from the `MASKFUSIONNET_UBFC_ROOT` environment variable (no hard-coded paths), and write per-epoch checkpoints plus a CSV metrics log. Evaluation reports MAE, RMSE, SD and Pearson r on per-clip HR estimates.
+
+## 9. Training configuration
+
+| Setting | Paper | This run |
+|---|---|---|
+| Mask ratio ρ | 0.75 | 0.75 |
+| Loss weights α, β, γ | 1.0, 1.0, 1.0 | 1.0, 1.0, 1.0 (paper configuration) |
+| Prediction-loss weights | λ = 0.1; µ follows the dynamic schedule in Eq. 19 (µ₀ = 1.0, η = 5.0, schedule applies for the first 25 epochs, then µ = µ₀) | paper configuration |
+| Pretraining | Adam, lr 2e-6, wd 5e-5, batch 8, 400 epochs | 200 epochs, batch size 2; optimizer, learning rate and weight decay as in [`configs/pretrain.yaml`](configs/pretrain.yaml) |
+| Fine-tuning | Adam, wd 5e-5, batch 4, lr 1e-4 (VIPL-HR, COHFACE) or 3.5e-3 (PURE) | 200 epochs, batch size 2; optimizer, learning rate and weight decay as in [`configs/finetune.yaml`](configs/finetune.yaml) |
+| Data loading | n/a | 2 DataLoader workers |
+| Hardware | not stated in the paper's setup | NVIDIA T4, 16 GB (Google Colab) |
+| Runs | n/a | single run |
+
+Every hyperparameter with a paper-specified value is annotated `(paper)` in `configs/*.yaml`; every UBFC-specific choice is annotated `(ours)`.
+
+## 10. Pipeline verification figures
+
+These figures use a synthetic sinusoid and a synthetic clip. They verify the masking and signal-processing code and are **not** model predictions.
+
+**Tube masking** (identical spatial mask at every frame, the property illustrated in the paper's Fig. 3):
+
+![Tube masking](results/figures/tube_masking.png)
+
+**Signal processing** (78 bpm synthetic sinusoid; the FFT stage recovers 78.0 bpm):
+
+![Spectrum verification](results/figures/signal_processing_verification_spectrum.png)
+
+## 11. Project structure
 
 ```
 src/maskfusionnet/
-  models/       ConvBlock, EmbeddingLayer, attention, transformer,
-                masking, MFB, Stage-1 & Stage-2 models
+  models/       ConvBlock, EmbeddingLayer, attention, transformer, masking,
+                MFB, Stage-1 and Stage-2 models
   data/         UBFC-rPPG dataset, subject-level splits, preprocessing
   losses/       reconstruction loss (Eq 15-17), prediction loss (Eq 18-19)
   signal/       bandpass filtering, FFT, waveform -> BPM
   training/     generic Trainer, per-stage step functions
   utils/        metrics, checkpoints, config loading, logging, plotting
-scripts/        CLI entry points (train, evaluate, inference, demo, ...)
+scripts/        train, evaluate, inference, demo, shape inspection
 tests/          34 unit tests, no dataset required
-configs/        YAML configs for both training stages + dataset settings
-results/        generated figures/tables (see file-level notes on what's
-                real vs. synthetic-verification)
+configs/        YAML configs for both stages
+results/        figures and tables (synthetic-verification files are labelled)
 AUDIT.md        line-by-line bug report against the original repository
 ```
 
-## 17. Engineering Details
+## 12. Engineering notes
 
-- **PyTorch** end to end; mixed precision (`--use_amp` in config) and
-  gradient accumulation supported in `Trainer`, though untested on real
-  GPU hardware here (no GPU was available while building this).
-- **Checkpointing** always bundles model + optimizer + scheduler state +
-  epoch + config + metrics, and always reports missing/unexpected keys —
-  never a silent `strict=False` (see [`AUDIT.md`](AUDIT.md), bug #9).
-- **Config-driven**: every hyperparameter that has a paper-specified value
-  is set to it in `configs/*.yaml`, annotated `(paper)`; every UBFC-specific
-  choice is annotated `(ours)`.
-- **Docker** support for a reproducible environment.
-- **34 automated tests**, all data-free (synthetic tensors only), so CI
-  can run them without a GPU or dataset.
-- Deliberately **no** extra infrastructure (no message queues, no
-  orchestration, no experiment-tracking service) — the stack is sized to
-  the problem.
+- Mixed precision (`use_amp`) and gradient accumulation are supported in `Trainer` through the config.
+- Checkpoints bundle model, optimizer, scheduler, epoch, config and metrics, and always report missing/unexpected keys. There is no silent `strict=False` ([`AUDIT.md`](AUDIT.md), bug #9).
+- All 34 tests use synthetic tensors only, so CI runs without a GPU or dataset.
+- No extra infrastructure (queues, orchestration, tracking services): the stack is sized to the problem.
 
-## 18. Limitations
+## 13. Limitations and roadmap
 
-- **No trained checkpoint or accuracy numbers exist yet** — everything
-  above the model/data/loss/test layer (real training, real evaluation)
-  is unrun, for lack of a GPU and a UBFC-rPPG download in the environment
-  that built this.
-- UBFC-rPPG is a small, single-scenario (static, well-lit, near-frontal)
-  dataset; a model trained only on it should not be expected to
-  generalize the way the paper's VIPL-HR-trained models do.
-- Face detection uses a Haar cascade, not the paper's FAN detector — less
-  robust to extreme pose/occlusion (see [`AUDIT.md`](AUDIT.md), ambiguity notes,
-  and `data/preprocessing.py`).
-- Several paper details are underspecified (exact pooling stride, masking
-  applied at pixel vs. token resolution, MFB weight sharing, HR-binning
-  procedure); every such gap is resolved with a documented, explicit
-  assumption rather than silently guessed — see `AUDIT.md`, "Ambiguities."
-- CPU-only environments will find Stage 1 pretraining (400 epochs in the
-  paper's own protocol) impractically slow; `configs/pretrain.yaml`'s
-  batch size, clip length, and image size are all reducible for smaller
-  hardware.
+**Limitations**
 
-## 19. Paper
+- The reported numbers come from a **single run** on a small dataset. With a subject-level 70/15/15 split of UBFC-rPPG, the test set contains only a few subjects, so the metrics are high-variance and the 0.29 bpm MAE gain from pretraining is not statistically established.
+- Results are not comparable to the paper's tables (different dataset, detector, split and per-clip evaluation protocol; see Section 2).
+- Training was shorter and used smaller batches than the paper's protocol (200 pretraining epochs against 400, batch size 2 against 8 and 4), because of a single 16 GB T4 GPU.
+- Haar-cascade face detection is less robust than the paper's FAN detector under extreme pose or occlusion.
+- Several paper details are underspecified (pooling stride, whether masking is applied at pixel or token resolution, MFB weight sharing, the HR-binning procedure). Each gap is resolved with an explicit, documented assumption in [`AUDIT.md`](AUDIT.md), "Ambiguities".
+- UBFC-rPPG is single-scenario (static, well-lit, near-frontal). Cross-dataset generalisation, the paper's strongest claim, has not been tested here.
+- Predicted-vs-ground-truth plots from a trained checkpoint are not yet included; Section 10 shows synthetic verification figures only.
 
-> Y. Zhang, J. Shi, J. Wang, Y. Zong, W. Zheng and G. Zhao, "MaskFusionNet:
-> A Dual-Stream Fusion Model With Masked Pre-Training Mechanism for rPPG
-> Measurement," *IEEE Transactions on Circuits and Systems for Video
-> Technology*, vol. 34, no. 11, pp. 11521-11534, Nov. 2024,
-> doi: 10.1109/TCSVT.2024.3422849.
+**Roadmap**
 
-## 20. Citation
+- Repeat training over several seeds and report mean ± std.
+- Evaluate on PURE for a like-for-like comparison with Table III of the paper.
+- Add cross-dataset evaluation (train on one dataset, test on another).
+- Add real predicted-vs-ground-truth BVP, scatter and Bland–Altman plots, including a failure case.
+- Swap the Haar cascade for a FAN-style detector.
+- Ablate the mask ratio (paper Table V) and loss components (Table VI).
+
+## 14. Citation
 
 ```bibtex
 @article{zhang2024maskfusionnet,
@@ -369,5 +286,4 @@ AUDIT.md        line-by-line bug report against the original repository
 }
 ```
 
-This repository is an independent re-implementation for research/education
-purposes; see [`LICENSE`](LICENSE).
+This is an independent reimplementation for research and education, and is not affiliated with the paper's authors. Code is released under the MIT License ([`LICENSE`](LICENSE)). If you use this repository, please cite the original paper.
